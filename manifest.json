@@ -1,9 +1,9 @@
 {
-  "name": "<YOUR_TRAIT_NAME>",
+  "name": "greetc",
   "functions": {
-    "<FUNCTION_NAME>": {
-      "return": "<RETURN_TYPE>",
-      "args": ["<ARGUMENT_TYPE1>", "<ARGUMENT_TYPE2>"]
+    "greet": {
+      "return": "void",
+      "args": ["char *"]
     }
   }
 }
