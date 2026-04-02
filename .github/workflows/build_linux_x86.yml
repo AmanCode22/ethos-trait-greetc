@@ -26,7 +26,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/${{ steps.config.outputs.trait_name }}.so
+          file: build/lib${{ steps.config.outputs.trait_name }}.so
           asset_name: ${{ steps.config.outputs.trait_name }}-linux-x86_64.so
           tag: ${{ github.ref_name }}
           overwrite: true
