@@ -1,0 +1,32 @@
+name: Build Linux .so x86
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trait
+        uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc
+      - name: Configure CMAKE
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Read trait name from config
+        id: config
+        run: NAME=$(grep '"name"' manifest.json | cut -d'"' -f4)
+          echo "trait_name=$NAME" >> $GITHUB_OUTPUT
+      - name: Upload to GitHub Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/${{ steps.config.outputs.trait_name }}.so
+          asset_name: ${{ steps.config.outputs.trait_name }}-linux-x86_64.so
+          tag: ${{ github.ref_name }}
+          overwrite: true
