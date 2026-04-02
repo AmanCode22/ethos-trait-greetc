@@ -20,8 +20,12 @@ jobs:
         run: cmake --build build --config Release
       - name: Read trait name from config
         id: config
-        run: NAME=$(grep '"name"' manifest.json | cut -d'"' -f4)
-          echo "trait_name=$NAME" >> $GITHUB_OUTPUT
+        run:  |
+            NAME=$(grep '"name":' manifest.json | sed 's/.*"name": *"\([^"]*\)".*/\1/')
+            if [ -z "$NAME" ]; then
+              NAME=$(grep 'name:' manifest.json | sed 's/.*name: *"\([^"]*\)".*/\1/')
+            fi
+            echo "trait_name=$NAME" >> $GITHUB_OUTPUT
       - name: Upload to GitHub Release
         uses: svenstaro/upload-release-action@v2
         with:
