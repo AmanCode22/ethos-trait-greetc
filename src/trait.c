@@ -1,1 +1,4 @@
-// WRITE YOUR CODE HERE OR YOU MUST EXPORT THE FUNCTIONS HERE
+#include <stdio.h>
+void greet(char * name) {
+    printf("Hello, %s\n",name);
+}
