@@ -59,6 +59,13 @@ jobs:
           NAME=$(grep '"name"' manifest.json | cut -d'"' -f4)
           echo "trait_name=$NAME" >> $GITHUB_OUTPUT
           
+  trigger-windows:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event.release && !github.event.release.prerelease
+    permissions:
+      actions: write
+    steps:
       - name: Trigger windows build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
