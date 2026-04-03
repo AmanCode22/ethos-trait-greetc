@@ -185,7 +185,7 @@ jobs:
           
           echo "$MANIFEST" > final_manifest.json
           
-      - name: Create PR directly
+      - name: Create PR using gh fork
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,10 +194,10 @@ jobs:
           TRAIT_VERSION="${{ steps.manifest.outputs.version }}"
           BRANCH_NAME="ethos-trait-$TRAIT_NAME-pr"
           
-          mkdir -p ethos-trait-$TRAIT_NAME-pr/traits/$TRAIT_NAME
-          cp final_manifest.json ethos-trait-$TRAIT_NAME-pr/traits/$TRAIT_NAME/manifest.json
+          mkdir -p $BRANCH_NAME/traits/$TRAIT_NAME
+          cp final_manifest.json $BRANCH_NAME/traits/$TRAIT_NAME/manifest.json
           
-          cd ethos-trait-$TRAIT_NAME-pr
+          cd $BRANCH_NAME
           
           git init
           git config user.name "github-actions[bot]"
@@ -207,16 +207,15 @@ jobs:
           git add .
           git commit -m "Add $TRAIT_NAME trait v$TRAIT_VERSION"
           
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/ethos-trait-$TRAIT_NAME-pr.git
-          
-          git push -f origin $BRANCH_NAME
+          gh repo create $BRANCH_NAME --public --push --source=. --remote=origin --description "PR branch for $TRAIT_NAME trait"
           
           PR_URL=$(gh pr create \
             --repo AmanCode22/ethos-foundry \
             --title "Add $TRAIT_NAME trait" \
             --body "This PR adds the $TRAIT_NAME trait version $TRAIT_VERSION to the registry.\n\n**Repository:** ${{ steps.manifest.outputs.repository }}\n**Submitter:** ${{ steps.manifest.outputs.submitter }}\n**Release Tag:** ${{ github.event.inputs.tag_name }}\n\n## Functions\n\`\`\`json\n$(jq '.functions' ../trait-repo/manifest.json)\n\`\`\`\n\n## Tags\n${{ steps.tags.outputs.tags }}\n\nPlease review and merge if everything looks good." \
             --head ${{ github.repository_owner }}:$BRANCH_NAME \
-            --base main)
+            --base main \
+            --repo AmanCode22/ethos-foundry)
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           
