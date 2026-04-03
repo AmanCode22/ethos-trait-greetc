@@ -7,3 +7,93 @@ on:
         description: 'Release tag'
         required: true
         type: string
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            platform: linux/arm64
+            image: termux/termux-docker:aarch64
+            runner: ubuntu-24.04-arm
+            asset_suffix: arm64
+          - arch: armv7
+            platform: linux/arm/v7
+            image: termux/termux-docker:arm
+            runner: ubuntu-latest
+            asset_suffix: armv7
+
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout trait
+        uses: actions/checkout@v4
+        
+      - name: Set up QEMU
+        if: matrix.arch == 'armv7'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build in Termux Docker
+        run: |
+          cat << 'EOF' > build-termux.sh
+          #!/data/data/com.termux/files/usr/bin/bash
+          set -e
+          
+          export ARCH=$1
+          export DEBIAN_FRONTEND=noninteractive
+          
+          echo "deb https://packages-cf.termux.dev/apt/termux-main stable main" > $PREFIX/etc/apt/sources.list
+          
+          apt-get update
+          apt-get upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"
+          
+          apt-get install -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" \
+            cmake make gcc clang binutils libc++ build-essential jq
+          
+          cd /workspace
+          
+          # Configure CMake for Termux
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++"
+          
+          # Build
+          cmake --build build --config Release --target trait
+          
+          # Read trait name
+          TRAIT_NAME=$(jq -r '.name' manifest.json)
+          echo "trait_name=$TRAIT_NAME" > /workspace/trait_name.txt
+          
+          # Make binary executable for Termux
+          chmod +x build/lib$TRAIT_NAME.so
+          EOF
+          
+          chmod +x build-termux.sh
+          
+          docker run --rm --privileged \
+            --platform ${{ matrix.platform }} \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ${{ matrix.image }} \
+            bash /workspace/build-termux.sh ${{ matrix.arch }}
+
+      - name: Read trait name
+        id: config
+        run: |
+          TRAIT_NAME=$(cat trait_name.txt)
+          echo "trait_name=$TRAIT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload to GitHub Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/lib${{ steps.config.outputs.trait_name }}.so
+          asset_name: ${{ steps.config.outputs.trait_name }}-termux-${{ matrix.asset_suffix }}.so
+          tag: ${{ github.event.inputs.tag_name }}
+          overwrite: true
