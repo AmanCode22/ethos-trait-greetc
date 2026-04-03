@@ -73,7 +73,7 @@ jobs:
               "checksum": ""
             },
             "macos-x86_64": {
-              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-x86_64.dylib",
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-intel.dylib",
               "checksum": ""
             },
             "windows": {
@@ -130,7 +130,7 @@ jobs:
             ["linux-x86_64.so"]="$NAME-linux-x86_64.so"
             ["linux-aarch64.so"]="$NAME-linux-arm64.so"
             ["macos-arm64.dylib"]="$NAME-macos-arm64.dylib"
-            ["macos-x86_64.dylib"]="$NAME-macos-x86_64.dylib"
+            ["macos-x86_64.dylib"]="$NAME-macos-intel.dylib"
             ["windows.dll"]="$NAME-windows-x86_64.dll"
             ["windows-arm64.dll"]="$NAME-windows-arm64.dll"
             ["termux-aarch64.so"]="$NAME-termux-arm64.so"
