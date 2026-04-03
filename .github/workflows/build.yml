@@ -58,7 +58,6 @@ jobs:
         run: |
           NAME=$(grep '"name"' manifest.json | cut -d'"' -f4)
           echo "trait_name=$NAME" >> $GITHUB_OUTPUT
-          
   trigger-windows:
     runs-on: ubuntu-latest
     needs: build
@@ -66,9 +65,18 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Trigger windows build
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Trigger windows workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Build for windows.yml" \
+            --ref ${{ github.ref_name }} \
+            -f tag_name="${{ github.event.release.tag_name }}" \
+            --repo ${{ github.repository }}
+
         run: |
           gh workflow run "Build for windows" \
             --ref ${{ github.ref_name }} \
