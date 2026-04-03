@@ -71,12 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run "Build for windows.yml" \
+          gh workflow run "Build for windows" \
             --ref ${{ github.ref_name }} \
             -f tag_name="${{ github.event.release.tag_name }}" \
             --repo ${{ github.repository }}
-
-        run: |
-          gh workflow run "Build for windows" \
-            --ref ${{ github.ref_name }} \
-            -f tag_name="${{ github.event.release.tag_name }}"
