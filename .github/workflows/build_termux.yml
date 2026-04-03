@@ -52,7 +52,7 @@ jobs:
           apt-get upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"
           
           apt-get install -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" \
-            cmake make gcc clang binutils libc++ build-essential jq
+            cmake make clang binutils libc++  jq libllvm
           
           cd /workspace
           
