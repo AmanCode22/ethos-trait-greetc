@@ -1,0 +1,9 @@
+name: Build for termux
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag'
+        required: true
+        type: string
