@@ -1,4 +1,4 @@
-name: Build for All Platforms
+name: Build for MacOS and Linux
 
 on:
   release:
@@ -17,7 +17,10 @@ jobs:
             arch: x86_64
             ext: so
             asset_suffix: linux-x86_64
-            
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            ext: so
           - os: macos-15-intel
             platform: macos
             arch: intel
@@ -56,11 +59,10 @@ jobs:
           NAME=$(grep '"name"' manifest.json | cut -d'"' -f4)
           echo "trait_name=$NAME" >> $GITHUB_OUTPUT
           
-      - name: Upload to GitHub Release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/lib${{ steps.config.outputs.trait_name }}.${{ matrix.ext }}
-          asset_name: ${{ steps.config.outputs.trait_name }}-${{ matrix.asset_suffix }}.${{ matrix.ext }}
-          tag: ${{ github.ref_name }}
-          overwrite: true
+      - name: Trigger windows build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Build for windows" \
+            --ref ${{ github.ref_name }} \
+            -f tag_name="${{ github.event.release.tag_name }}"
