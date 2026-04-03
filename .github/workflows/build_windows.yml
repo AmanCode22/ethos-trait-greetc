@@ -53,3 +53,10 @@ jobs:
           asset_name: ${{ steps.config.outputs.trait_name }}-windows-${{ matrix.asset_suffix }}.dll
           tag: ${{ github.event.inputs.tag_name }}  
           overwrite: true
+      - name: Trigger windows build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Build for termux" \
+            --ref ${{ github.ref_name }} \
+              -f tag_name="${{ github.event.inputs.tag_name }}"
