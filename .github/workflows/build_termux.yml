@@ -1,4 +1,4 @@
-name: Build for termux
+name: Build for Termux
 
 on:
   workflow_dispatch:
@@ -10,85 +10,50 @@ on:
 
 jobs:
   build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
-      fail-fast: false
       matrix:
         include:
           - arch: aarch64
-            platform: linux/arm64
-            image: termux/termux-docker:aarch64
-            runner: ubuntu-24.04-arm
+            ndk_abi: arm64-v8a
             asset_suffix: arm64
+            needs_qemu: false
           - arch: armv7
-            platform: linux/arm/v7
-            image: termux/termux-docker:arm
-            runner: ubuntu-latest
+            ndk_abi: armeabi-v7a
             asset_suffix: armv7
-
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: write
+            needs_qemu: true
 
     steps:
-      - name: Checkout trait
-        uses: actions/checkout@v4
-        
-      - name: Set up QEMU
-        if: matrix.arch == 'armv7'
+      - uses: actions/checkout@v4
+      
+      - name: Setup QEMU for ARMv7
+        if: matrix.needs_qemu
         uses: docker/setup-qemu-action@v3
-
-      - name: Build in Termux Docker
+        with:
+          platforms: arm
+      
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          
+      - name: Configure CMake
         run: |
-          cat << 'EOF' > build-termux.sh
-          #!/data/data/com.termux/files/usr/bin/bash
-          set -e
-          
-          export ARCH=$1
-          export DEBIAN_FRONTEND=noninteractive
-          
-          echo "deb https://packages-cf.termux.dev/apt/termux-main stable main" > $PREFIX/etc/apt/sources.list
-          
-          apt-get update
-          apt-get upgrade -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef"
-          
-          apt-get install -y -o Dpkg::Options::="--force-confold" -o Dpkg::Options::="--force-confdef" \
-            cmake make clang binutils libc++  jq libllvm
-          
-          cd /workspace
-          
-          # Configure CMake for Termux
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_FLAGS="-stdlib=libc++"
-          
-          # Build
-          cmake --build build --config Release --target trait
-          
-          # Read trait name
-          TRAIT_NAME=$(jq -r '.name' manifest.json)
-          echo "trait_name=$TRAIT_NAME" > /workspace/trait_name.txt
-          
-          # Make binary executable for Termux
-          chmod +x build/lib$TRAIT_NAME.so
-          EOF
-          
-          chmod +x build-termux.sh
-          
-          docker run --rm --privileged \
-            --platform ${{ matrix.platform }} \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            ${{ matrix.image }} \
-            bash /workspace/build-termux.sh ${{ matrix.arch }}
-
-      - name: Read trait name
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.ndk_abi }} \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_BUILD_TYPE=Release
+        
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc)
+        
+      - name: Get trait name
         id: config
-        run: |
-          TRAIT_NAME=$(cat trait_name.txt)
-          echo "trait_name=$TRAIT_NAME" >> $GITHUB_OUTPUT
-
+        run: echo "trait_name=$(jq -r '.name' manifest.json)" >> $GITHUB_OUTPUT
+        
       - name: Upload to GitHub Release
         uses: svenstaro/upload-release-action@v2
         with:
