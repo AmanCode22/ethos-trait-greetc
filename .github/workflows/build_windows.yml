@@ -1,8 +1,13 @@
 name: Build for windows
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag'
+        required: true
+        type: string
+
 
 jobs:
   build:
