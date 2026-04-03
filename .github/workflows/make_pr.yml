@@ -185,38 +185,38 @@ jobs:
           
           echo "$MANIFEST" > final_manifest.json
           
-      - name: Clone ethos-foundry and create folder
-        run: |
-          git clone https://github.com/AmanCode22/ethos-foundry.git
-          cd ethos-foundry
-          mkdir -p traits/${{ steps.manifest.outputs.name }}
-          cp ../final_manifest.json traits/${{ steps.manifest.outputs.name }}/manifest.json
-          
-      - name: Create PR to ethos-foundry
+      - name: Create PR directly
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd ethos-foundry
-          
           TRAIT_NAME="${{ steps.manifest.outputs.name }}"
           TRAIT_VERSION="${{ steps.manifest.outputs.version }}"
-          BRANCH_NAME="add-$TRAIT_NAME-$TRAIT_VERSION"
+          BRANCH_NAME="ethos-trait-$TRAIT_NAME-pr"
           
+          mkdir -p ethos-trait-$TRAIT_NAME-pr/traits/$TRAIT_NAME
+          cp final_manifest.json ethos-trait-$TRAIT_NAME-pr/traits/$TRAIT_NAME/manifest.json
+          
+          cd ethos-trait-$TRAIT_NAME-pr
+          
+          git init
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           git checkout -b $BRANCH_NAME
-          git add traits/$TRAIT_NAME/manifest.json
+          git add .
           git commit -m "Add $TRAIT_NAME trait v$TRAIT_VERSION"
+          
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/ethos-trait-$TRAIT_NAME-pr.git
+          
+          git push -f origin $BRANCH_NAME
           
           PR_URL=$(gh pr create \
             --repo AmanCode22/ethos-foundry \
             --title "Add $TRAIT_NAME trait" \
             --body "This PR adds the $TRAIT_NAME trait version $TRAIT_VERSION to the registry.\n\n**Repository:** ${{ steps.manifest.outputs.repository }}\n**Submitter:** ${{ steps.manifest.outputs.submitter }}\n**Release Tag:** ${{ github.event.inputs.tag_name }}\n\n## Functions\n\`\`\`json\n$(jq '.functions' ../trait-repo/manifest.json)\n\`\`\`\n\n## Tags\n${{ steps.tags.outputs.tags }}\n\nPlease review and merge if everything looks good." \
-            --head $BRANCH_NAME \
-            --base main \
-            --repo AmanCode22/ethos-foundry)
+            --head ${{ github.repository_owner }}:$BRANCH_NAME \
+            --base main)
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           
