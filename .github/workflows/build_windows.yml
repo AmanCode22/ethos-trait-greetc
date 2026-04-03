@@ -53,7 +53,7 @@ jobs:
           asset_name: ${{ steps.config.outputs.trait_name }}-windows-${{ matrix.asset_suffix }}.dll
           tag: ${{ github.event.inputs.tag_name }}  
           overwrite: true
-      - name: Trigger windows build
+      - name: Trigger termux build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
