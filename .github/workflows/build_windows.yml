@@ -49,7 +49,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/lib${{ steps.config.outputs.trait_name }}.dll
+          file: build/Release/${{ steps.config.outputs.trait_name }}.dll
           asset_name: ${{ steps.config.outputs.trait_name }}-windows-${{ matrix.asset_suffix }}.dll
           tag: ${{ github.event.inputs.tag_name }}  
           overwrite: true
