@@ -1,0 +1,258 @@
+name: Submit PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag'
+        required: true
+        type: string
+
+jobs:
+  generate-and-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout trait repo
+        uses: actions/checkout@v4
+        with:
+          path: trait-repo
+          
+      - name: Validate manifest.json exists
+        run: |
+          if [ ! -f "trait-repo/manifest.json" ]; then
+            echo "Error: manifest.json not found"
+            exit 1
+          fi
+          
+      - name: Read manifest.json
+        id: manifest
+        run: |
+          cd trait-repo
+          NAME=$(jq -r '.name' manifest.json)
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          VERSION="${{ github.event.inputs.tag_name }}"
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          echo "submitter=$REPO_OWNER" >> $GITHUB_OUTPUT
+          REPO_URL="https://github.com/${{ github.repository }}"
+          echo "repository=$REPO_URL" >> $GITHUB_OUTPUT
+          
+      - name: Read tags from tags.txt
+        id: tags
+        run: |
+          cd trait-repo
+          if [ -f "tags.txt" ]; then
+            TAGS=$(cat tags.txt | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          else
+            echo "tags=[]" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Generate enhanced manifest
+        run: |
+          cd trait-repo
+          TAG="${{ github.event.inputs.tag_name }}"
+          
+          cat > platforms.json << EOF
+          {
+            "linux-x86_64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-linux-x86_64.so",
+              "checksum": ""
+            },
+            "linux-aarch64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-linux-arm64.so",
+              "checksum": ""
+            },
+            "macos-arm64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-arm64.dylib",
+              "checksum": ""
+            },
+            "macos-x86_64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-x86_64.dylib",
+              "checksum": ""
+            },
+            "windows": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-windows-x86_64.dll",
+              "checksum": ""
+            },
+            "windows-arm64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-windows-arm64.dll",
+              "checksum": ""
+            },
+            "termux-aarch64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-termux-arm64.so",
+              "checksum": ""
+            },
+            "termux-armv7": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-termux-armv7.so",
+              "checksum": ""
+            }
+          }
+          EOF
+          
+          jq --argfile platforms platforms.json \
+             --arg version "${{ steps.manifest.outputs.version }}" \
+             --arg description "A trait for ${{ steps.manifest.outputs.name }}" \
+             --arg submitter "${{ steps.manifest.outputs.submitter }}" \
+             --arg repository "${{ steps.manifest.outputs.repository }}" \
+             --arg license "MIT" \
+             --argjson tags '${{ steps.tags.outputs.tags }}' \
+             '. + {
+               version: $version,
+               description: $description,
+               submitter: $submitter,
+               repository: $repository,
+               license: $license,
+               platforms: $platforms,
+               tags: $tags,
+               verified: false
+             }' manifest.json > final_manifest.json
+          
+          cp final_manifest.json ../final_manifest.json
+          
+      - name: Calculate checksums
+        id: checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          NAME="${{ steps.manifest.outputs.name }}"
+          
+          mkdir -p binaries
+          cd binaries
+          
+          declare -A binaries=(
+            ["linux-x86_64.so"]="$NAME-linux-x86_64.so"
+            ["linux-aarch64.so"]="$NAME-linux-arm64.so"
+            ["macos-arm64.dylib"]="$NAME-macos-arm64.dylib"
+            ["macos-x86_64.dylib"]="$NAME-macos-x86_64.dylib"
+            ["windows.dll"]="$NAME-windows-x86_64.dll"
+            ["windows-arm64.dll"]="$NAME-windows-arm64.dll"
+            ["termux-aarch64.so"]="$NAME-termux-arm64.so"
+            ["termux-armv7.so"]="$NAME-termux-armv7.so"
+          )
+          
+          for asset in "${!binaries[@]}"; do
+            url="https://github.com/${{ github.repository }}/releases/download/$TAG/${binaries[$asset]}"
+            curl -L -f -o "$asset" "$url"
+            sha256=$(sha256sum "$asset" | cut -d' ' -f1)
+            key=$(echo "$asset" | sed 's/[-.]/_/g')
+            echo "sha256_${key}=$sha256" >> $GITHUB_OUTPUT
+          done
+          
+          cd ..
+          
+      - name: Update manifest with checksums
+        run: |
+          MANIFEST=$(cat final_manifest.json)
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_linux_x86_64_so }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-x86_64".checksum = "sha256:${{ steps.checksums.outputs.sha256_linux_x86_64_so }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_linux_aarch64_so }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-aarch64".checksum = "sha256:${{ steps.checksums.outputs.sha256_linux_aarch64_so }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_macos_arm64_dylib }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-arm64".checksum = "sha256:${{ steps.checksums.outputs.sha256_macos_arm64_dylib }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_macos_x86_64_dylib }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-x86_64".checksum = "sha256:${{ steps.checksums.outputs.sha256_macos_x86_64_dylib }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_windows_dll }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms.windows.checksum = "sha256:${{ steps.checksums.outputs.sha256_windows_dll }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_windows_arm64_dll }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."windows-arm64".checksum = "sha256:${{ steps.checksums.outputs.sha256_windows_arm64_dll }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_termux_aarch64_so }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-aarch64".checksum = "sha256:${{ steps.checksums.outputs.sha256_termux_aarch64_so }}"')
+          fi
+          
+          if [ -n "${{ steps.checksums.outputs.sha256_termux_armv7_so }}" ]; then
+            MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-armv7".checksum = "sha256:${{ steps.checksums.outputs.sha256_termux_armv7_so }}"')
+          fi
+          
+          echo "$MANIFEST" > final_manifest.json
+          
+      - name: Clone ethos-foundry and create folder
+        run: |
+          git clone https://github.com/AmanCode22/ethos-foundry.git
+          cd ethos-foundry
+          mkdir -p traits/${{ steps.manifest.outputs.name }}
+          cp ../final_manifest.json traits/${{ steps.manifest.outputs.name }}/manifest.json
+          
+      - name: Create PR to ethos-foundry
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          cd ethos-foundry
+          
+          TRAIT_NAME="${{ steps.manifest.outputs.name }}"
+          TRAIT_VERSION="${{ steps.manifest.outputs.version }}"
+          BRANCH_NAME="ethos-foundry-pr-$TRAIT_NAME"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git checkout -b $BRANCH_NAME
+          git add traits/$TRAIT_NAME/manifest.json
+          git commit -m "Add $TRAIT_NAME trait v$TRAIT_VERSION"
+          
+          PR_URL=$(gh pr create \
+            --repo AmanCode22/ethos-foundry \
+            --title "Add $TRAIT_NAME trait" \
+            --body "This PR adds the $TRAIT_NAME trait version $TRAIT_VERSION to the registry.\n\n**Repository:** ${{ steps.manifest.outputs.repository }}\n**Submitter:** ${{ steps.manifest.outputs.submitter }}\n**Release Tag:** ${{ github.event.inputs.tag_name }}\n\n## Functions\n\`\`\`json\n$(jq '.functions' ../trait-repo/manifest.json)\n\`\`\`\n\n## Tags\n${{ steps.tags.outputs.tags }}\n\nPlease review and merge if everything looks good." \
+            --head $BRANCH_NAME \
+            --base main \
+            --fork)
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          
+      - name: Update release with PR link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          gh release edit "$TAG" --notes "Registry PR: $PR_URL" --repo ${{ github.repository }}
+          
+      - name: Setup cleanup workflow trigger
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          TRAIT_NAME="${{ steps.manifest.outputs.name }}"
+          BRANCH_NAME="ethos-foundry-pr-$TRAIT_NAME"
+          
+          cat > cleanup.sh << 'EOF'
+          #!/bin/bash
+          while true; do
+            PR_STATE=$(gh pr view $BRANCH_NAME --repo AmanCode22/ethos-foundry --json state -q '.state' 2>/dev/null || echo "not found")
+            
+            if [ "$PR_STATE" = "MERGED" ] || [ "$PR_STATE" = "CLOSED" ]; then
+              echo "PR is $PR_STATE, cleaning up branch..."
+              git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/AmanCode22/ethos-foundry.git --delete $BRANCH_NAME 2>/dev/null || true
+              git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }} --delete $BRANCH_NAME 2>/dev/null || true
+              exit 0
+            fi
+            
+            echo "PR still open, checking again in 5 minutes..."
+            sleep 300
+          done
+          EOF
+          
+          chmod +x cleanup.sh
+          nohup ./cleanup.sh > cleanup.log 2>&1 &
