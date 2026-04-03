@@ -95,7 +95,7 @@ jobs:
           }
           EOF
           
-          jq --argfile platforms platforms.json \
+          jq --slurpfile platforms platforms.json \
              --arg version "${{ steps.manifest.outputs.version }}" \
              --arg description "A trait for ${{ steps.manifest.outputs.name }}" \
              --arg submitter "${{ steps.manifest.outputs.submitter }}" \
@@ -108,7 +108,7 @@ jobs:
                submitter: $submitter,
                repository: $repository,
                license: $license,
-               platforms: $platforms,
+               platforms: $platforms[0],
                tags: $tags,
                verified: false
              }' manifest.json > final_manifest.json
@@ -195,13 +195,13 @@ jobs:
       - name: Create PR to ethos-foundry
         id: pr
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd ethos-foundry
           
           TRAIT_NAME="${{ steps.manifest.outputs.name }}"
           TRAIT_VERSION="${{ steps.manifest.outputs.version }}"
-          BRANCH_NAME="ethos-foundry-pr-$TRAIT_NAME"
+          BRANCH_NAME="add-$TRAIT_NAME-$TRAIT_VERSION"
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -216,10 +216,9 @@ jobs:
             --body "This PR adds the $TRAIT_NAME trait version $TRAIT_VERSION to the registry.\n\n**Repository:** ${{ steps.manifest.outputs.repository }}\n**Submitter:** ${{ steps.manifest.outputs.submitter }}\n**Release Tag:** ${{ github.event.inputs.tag_name }}\n\n## Functions\n\`\`\`json\n$(jq '.functions' ../trait-repo/manifest.json)\n\`\`\`\n\n## Tags\n${{ steps.tags.outputs.tags }}\n\nPlease review and merge if everything looks good." \
             --head $BRANCH_NAME \
             --base main \
-            --fork)
+            --repo AmanCode22/ethos-foundry)
           
           echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           
       - name: Update release with PR link
         env:
@@ -228,31 +227,3 @@ jobs:
           TAG="${{ github.event.inputs.tag_name }}"
           PR_URL="${{ steps.pr.outputs.pr_url }}"
           gh release edit "$TAG" --notes "Registry PR: $PR_URL" --repo ${{ github.repository }}
-          
-      - name: Setup cleanup workflow trigger
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          TRAIT_NAME="${{ steps.manifest.outputs.name }}"
-          BRANCH_NAME="ethos-foundry-pr-$TRAIT_NAME"
-          
-          cat > cleanup.sh << 'EOF'
-          #!/bin/bash
-          while true; do
-            PR_STATE=$(gh pr view $BRANCH_NAME --repo AmanCode22/ethos-foundry --json state -q '.state' 2>/dev/null || echo "not found")
-            
-            if [ "$PR_STATE" = "MERGED" ] || [ "$PR_STATE" = "CLOSED" ]; then
-              echo "PR is $PR_STATE, cleaning up branch..."
-              git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/AmanCode22/ethos-foundry.git --delete $BRANCH_NAME 2>/dev/null || true
-              git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }} --delete $BRANCH_NAME 2>/dev/null || true
-              exit 0
-            fi
-            
-            echo "PR still open, checking again in 5 minutes..."
-            sleep 300
-          done
-          EOF
-          
-          chmod +x cleanup.sh
-          nohup ./cleanup.sh > cleanup.log 2>&1 &
