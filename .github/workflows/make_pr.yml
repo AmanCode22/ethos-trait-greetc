@@ -206,7 +206,7 @@ jobs:
           git checkout -b $BRANCH_NAME
           git add .
           git commit -m "Add $TRAIT_NAME trait v$TRAIT_VERSION"
-          
+          gh auth login
           gh repo create $BRANCH_NAME --public --push --source=. --remote=origin --description "PR branch for $TRAIT_NAME trait"
           
           PR_URL=$(gh pr create \
