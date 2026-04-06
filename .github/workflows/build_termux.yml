@@ -71,7 +71,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Trigger pr creation workflow
+      - name: Trigger pr manifest creatopm workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
