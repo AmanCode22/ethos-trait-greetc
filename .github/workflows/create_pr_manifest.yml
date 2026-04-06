@@ -168,11 +168,11 @@ jobs:
           [ -n "$cs_termux_aarch64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-aarch64".checksum = "sha256:'"$cs_termux_aarch64"'"')
           [ -n "$cs_termux_armv7" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-armv7".checksum = "sha256:'"$cs_termux_armv7"'"')
           
-          echo "$MANIFEST" > trait-repo/pr_manifest.json
+          echo "$MANIFEST" > trait-repo/manifest.json
           
       - name: Release pr manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag_name }}"
-          gh release upload "$TAG" trait-repo/pr_manifest.json --clobber --repo ${{ github.repository }}
+          gh release upload "$TAG" trait-repo/manifest.json --clobber --repo ${{ github.repository }}
