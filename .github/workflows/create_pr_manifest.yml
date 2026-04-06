@@ -21,7 +21,7 @@ jobs:
           gem install licensee
           LICENSE=$(licensee detect --json | jq -r .license)
 
-        working-directory: trait-repo
+        
 
       - name: Checkout trait repo
         uses: actions/checkout@v4
