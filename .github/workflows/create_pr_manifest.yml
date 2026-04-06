@@ -1,0 +1,178 @@
+name: Create PR manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag'
+        required: true
+        type: string
+
+jobs:
+  generate-manifest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout trait repo
+        uses: actions/checkout@v4
+        with:
+          path: trait-repo
+          
+      - name: Validate manifest.json exists
+        run: |
+          if [ ! -f "trait-repo/manifest.json" ]; then
+            echo "Error: manifest.json not found"
+            exit 1
+          fi
+          
+      - name: Read manifest.json
+        id: manifest
+        run: |
+          cd trait-repo
+          NAME=$(jq -r '.name' manifest.json)
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          VERSION="${{ github.event.inputs.tag_name }}"
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          echo "submitter=$REPO_OWNER" >> $GITHUB_OUTPUT
+          REPO_URL="https://github.com/${{ github.repository }}"
+          echo "repository=$REPO_URL" >> $GITHUB_OUTPUT
+          
+      - name: Read tags from tags.txt
+        id: tags
+        run: |
+          cd trait-repo
+          if [ -f "tags.txt" ]; then
+            TAGS=$(cat tags.txt | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          else
+            echo "tags=[]" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Generate pr manifest
+        run: |
+          cd trait-repo
+          TAG="${{ github.event.inputs.tag_name }}"
+          
+          cat > platforms.json << EOF
+          {
+            "linux-x86_64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-linux-x86_64.so",
+              "checksum": ""
+            },
+            "linux-aarch64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-linux-arm64.so",
+              "checksum": ""
+            },
+            "macos-arm64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-arm64.dylib",
+              "checksum": ""
+            },
+            "macos-x86_64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-macos-intel.dylib",
+              "checksum": ""
+            },
+            "windows": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-windows-x86_64.dll",
+              "checksum": ""
+            },
+            "windows-arm64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-windows-arm64.dll",
+              "checksum": ""
+            },
+            "termux-aarch64": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-termux-arm64.so",
+              "checksum": ""
+            },
+            "termux-armv7": {
+              "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/${{ steps.manifest.outputs.name }}-termux-armv7.so",
+              "checksum": ""
+            }
+          }
+          EOF
+          
+          jq --slurpfile platforms platforms.json \
+             --arg version "${{ steps.manifest.outputs.version }}" \
+             --arg description "A trait for ${{ steps.manifest.outputs.name }}" \
+             --arg submitter "${{ steps.manifest.outputs.submitter }}" \
+             --arg repository "${{ steps.manifest.outputs.repository }}" \
+             --arg license "MIT" \
+             --argjson tags '${{ steps.tags.outputs.tags }}' \
+             '. + {
+               version: $version,
+               description: $description,
+               submitter: $submitter,
+               repository: $repository,
+               license: $license,
+               platforms: $platforms[0],
+               tags: $tags,
+               verified: false
+             }' manifest.json > pr_manifest.json
+          
+      - name: Calculate checksums
+        id: checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          NAME="${{ steps.manifest.outputs.name }}"
+          
+          mkdir -p binaries
+          cd binaries
+          
+          declare -A binaries=(
+            ["linux-x86_64"]="$NAME-linux-x86_64.so"
+            ["linux_aarch64"]="$NAME-linux-arm64.so"
+            ["macos_arm64"]="$NAME-macos-arm64.dylib"
+            ["macos_x86_64"]="$NAME-macos-intel.dylib"
+            ["windows"]="$NAME-windows-x86_64.dll"
+            ["windows_arm64"]="$NAME-windows-arm64.dll"
+            ["termux_aarch64"]="$NAME-termux-arm64.so"
+            ["termux_armv7"]="$NAME-termux-armv7.so"
+          )
+          
+          for key in "${!binaries[@]}"; do
+            filename="${binaries[$key]}"
+            url="https://github.com/${{ github.repository }}/releases/download/$TAG/$filename"
+            curl -L -f -o "$filename" "$url" 2>/dev/null || continue
+            if [ -f "$filename" ]; then
+              sha256=$(sha256sum "$filename" | cut -d' ' -f1)
+              echo "sha256_$key=$sha256" >> $GITHUB_OUTPUT
+            fi
+          done
+          
+          cd ..
+          
+      - name: Update pr manifest with checksums
+        run: |
+          MANIFEST=$(cat trait-repo/pr_manifest.json)
+          
+          cs_linux_x86_64="${{ steps.checksums.outputs.sha256_linux_x86_64 }}"
+          cs_linux_aarch64="${{ steps.checksums.outputs.sha256_linux_aarch64 }}"
+          cs_macos_arm64="${{ steps.checksums.outputs.sha256_macos_arm64 }}"
+          cs_macos_x86_64="${{ steps.checksums.outputs.sha256_macos_x86_64 }}"
+          cs_windows="${{ steps.checksums.outputs.sha256_windows }}"
+          cs_windows_arm64="${{ steps.checksums.outputs.sha256_windows_arm64 }}"
+          cs_termux_aarch64="${{ steps.checksums.outputs.sha256_termux_aarch64 }}"
+          cs_termux_armv7="${{ steps.checksums.outputs.sha256_termux_armv7 }}"
+          
+          [ -n "$cs_linux_x86_64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-x86_64".checksum = "sha256:'"$cs_linux_x86_64"'"')
+          [ -n "$cs_linux_aarch64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-aarch64".checksum = "sha256:'"$cs_linux_aarch64"'"')
+          [ -n "$cs_macos_arm64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-arm64".checksum = "sha256:'"$cs_macos_arm64"'"')
+          [ -n "$cs_macos_x86_64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-x86_64".checksum = "sha256:'"$cs_macos_x86_64"'"')
+          [ -n "$cs_windows" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms.windows.checksum = "sha256:'"$cs_windows"'"')
+          [ -n "$cs_windows_arm64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."windows-arm64".checksum = "sha256:'"$cs_windows_arm64"'"')
+          [ -n "$cs_termux_aarch64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-aarch64".checksum = "sha256:'"$cs_termux_aarch64"'"')
+          [ -n "$cs_termux_armv7" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-armv7".checksum = "sha256:'"$cs_termux_armv7"'"')
+          
+          echo "$MANIFEST" > trait-repo/pr_manifest.json
+          
+      - name: Release pr manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          gh release upload "$TAG" trait-repo/pr_manifest.json --clobber --repo ${{ github.repository }}
