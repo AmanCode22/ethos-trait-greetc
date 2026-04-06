@@ -17,6 +17,9 @@ jobs:
     steps:
       - name: Set up Ruby for license detection
         uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true 
 
       - name: Detect License
         run: |
