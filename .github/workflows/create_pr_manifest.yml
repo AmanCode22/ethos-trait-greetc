@@ -15,6 +15,14 @@ jobs:
       contents: write
     
     steps:
+      
+      - name: Detect License
+        run: |
+          gem install licensee
+          LICENSE=$(licensee detect --json | jq -r .license)
+
+        working-directory: trait-repo
+
       - name: Checkout trait repo
         uses: actions/checkout@v4
         with:
