@@ -15,7 +15,9 @@ jobs:
       contents: write
     
     steps:
-      
+      - name: Set up Ruby for license detection
+        uses: ruby/setup-ruby@v1
+
       - name: Detect License
         run: |
           gem install licensee
