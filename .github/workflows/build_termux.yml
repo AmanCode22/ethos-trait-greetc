@@ -75,7 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run "Submit PR" \
+          gh workflow run "Create PR manifest" \
             --ref ${{ github.ref_name }} \
             -f tag_name="${{ github.event.inputs.tag_name }}" \
             --repo ${{ github.repository }}
