@@ -25,8 +25,7 @@ jobs:
         run: |
           gem install licensee
           LICENSE=$(licensee detect --json | jq -r .license)
-
-        
+          echo "detected_license=$LICENSE" >> $GITHUB_ENV   # Save for later use
 
       - name: Checkout trait repo
         uses: actions/checkout@v4
@@ -53,6 +52,9 @@ jobs:
           echo "submitter=$REPO_OWNER" >> $GITHUB_OUTPUT
           REPO_URL="https://github.com/${{ github.repository }}"
           echo "repository=$REPO_URL" >> $GITHUB_OUTPUT
+          
+          DESCRIPTION=$(jq -r '.description // ""' manifest.json)
+          echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
           
       - name: Read tags from tags.txt
         id: tags
@@ -107,12 +109,13 @@ jobs:
           }
           EOF
           
+          
           jq --slurpfile platforms platforms.json \
              --arg version "${{ steps.manifest.outputs.version }}" \
-             --arg description "A trait for ${{ steps.manifest.outputs.name }}" \
+             --arg description "${{ steps.manifest.outputs.description }}" \
              --arg submitter "${{ steps.manifest.outputs.submitter }}" \
              --arg repository "${{ steps.manifest.outputs.repository }}" \
-             --arg license "MIT" \
+             --arg license "${detected_license:-MIT}" \
              --argjson tags '${{ steps.tags.outputs.tags }}' \
              '. + {
                version: $version,
