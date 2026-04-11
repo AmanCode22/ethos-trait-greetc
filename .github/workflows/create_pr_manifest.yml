@@ -25,7 +25,7 @@ jobs:
         run: |
           gem install licensee
           LICENSE=$(licensee detect --json | jq -r .license)
-          echo "detected_license=$LICENSE" >> $GITHUB_ENV   # Save for later use
+          echo "detected_license=$LICENSE" >> $GITHUB_ENV
 
       - name: Checkout trait repo
         uses: actions/checkout@v4
@@ -109,7 +109,6 @@ jobs:
           }
           EOF
           
-          
           jq --slurpfile platforms platforms.json \
              --arg version "${{ steps.manifest.outputs.version }}" \
              --arg description "${{ steps.manifest.outputs.description }}" \
@@ -128,63 +127,36 @@ jobs:
                verified: false
              }' manifest.json > pr_manifest.json
           
-      - name: Calculate checksums
-        id: checksums
+      - name: Fetch Release Asset Hashes and Update Manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag_name }}
         run: |
-          TAG="${{ github.event.inputs.tag_name }}"
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.sha256)"' > hashes.txt
           NAME="${{ steps.manifest.outputs.name }}"
-          
-          mkdir -p binaries
-          cd binaries
-          
-          declare -A binaries=(
-            ["linux-x86_64"]="$NAME-linux-x86_64.so"
-            ["linux_aarch64"]="$NAME-linux-arm64.so"
-            ["macos_arm64"]="$NAME-macos-arm64.dylib"
-            ["macos_x86_64"]="$NAME-macos-intel.dylib"
-            ["windows"]="$NAME-windows-x86_64.dll"
-            ["windows_arm64"]="$NAME-windows-arm64.dll"
-            ["termux_aarch64"]="$NAME-termux-arm64.so"
-            ["termux_armv7"]="$NAME-termux-armv7.so"
-          )
-          
-          for key in "${!binaries[@]}"; do
-            filename="${binaries[$key]}"
-            url="https://github.com/${{ github.repository }}/releases/download/$TAG/$filename"
-            curl -L -f -o "$filename" "$url" 2>/dev/null || continue
-            if [ -f "$filename" ]; then
-              sha256=$(sha256sum "$filename" | cut -d' ' -f1)
-              echo "sha256_$key=$sha256" >> $GITHUB_OUTPUT
-            fi
-          done
-          
-          cd ..
-          
-      - name: Update pr manifest with checksums
-        run: |
-          MANIFEST=$(cat trait-repo/pr_manifest.json)
-          
-          cs_linux_x86_64="${{ steps.checksums.outputs.sha256_linux_x86_64 }}"
-          cs_linux_aarch64="${{ steps.checksums.outputs.sha256_linux_aarch64 }}"
-          cs_macos_arm64="${{ steps.checksums.outputs.sha256_macos_arm64 }}"
-          cs_macos_x86_64="${{ steps.checksums.outputs.sha256_macos_x86_64 }}"
-          cs_windows="${{ steps.checksums.outputs.sha256_windows }}"
-          cs_windows_arm64="${{ steps.checksums.outputs.sha256_windows_arm64 }}"
-          cs_termux_aarch64="${{ steps.checksums.outputs.sha256_termux_aarch64 }}"
-          cs_termux_armv7="${{ steps.checksums.outputs.sha256_termux_armv7 }}"
-          
-          [ -n "$cs_linux_x86_64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-x86_64".checksum = "sha256:'"$cs_linux_x86_64"'"')
-          [ -n "$cs_linux_aarch64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."linux-aarch64".checksum = "sha256:'"$cs_linux_aarch64"'"')
-          [ -n "$cs_macos_arm64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-arm64".checksum = "sha256:'"$cs_macos_arm64"'"')
-          [ -n "$cs_macos_x86_64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."macos-x86_64".checksum = "sha256:'"$cs_macos_x86_64"'"')
-          [ -n "$cs_windows" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms.windows.checksum = "sha256:'"$cs_windows"'"')
-          [ -n "$cs_windows_arm64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."windows-arm64".checksum = "sha256:'"$cs_windows_arm64"'"')
-          [ -n "$cs_termux_aarch64" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-aarch64".checksum = "sha256:'"$cs_termux_aarch64"'"')
-          [ -n "$cs_termux_armv7" ] && MANIFEST=$(echo "$MANIFEST" | jq '.platforms."termux-armv7".checksum = "sha256:'"$cs_termux_armv7"'"')
-          
-          echo "$MANIFEST" > trait-repo/manifest.json
+          cat > mapping.json << EOF
+          {
+            "linux-x86_64": "$NAME-linux-x86_64.so",
+            "linux-aarch64": "$NAME-linux-arm64.so",
+            "macos-arm64": "$NAME-macos-arm64.dylib",
+            "macos-x86_64": "$NAME-macos-intel.dylib",
+            "windows": "$NAME-windows-x86_64.dll",
+            "windows-arm64": "$NAME-windows-arm64.dll",
+            "termux-aarch64": "$NAME-termux-arm64.so",
+            "termux-armv7": "$NAME-termux-armv7.so"
+          }
+          EOF
+          jq -R 'split(" ") | {(.[0]): .[1]}' hashes.txt | jq -s 'add' > found_hashes.json
+          jq --slurpfile mapping mapping.json \
+             --slurpfile hashes found_hashes.json \
+             'reduce ( .platforms | keys[] ) as $key (.;
+               ($mapping[0][$key]) as $file |
+               if $hashes[0][$file] then
+                 .platforms[$key].checksum = "sha256:" + $hashes[0][$file]
+               else
+                 .
+               end
+             )' trait-repo/pr_manifest.json > trait-repo/manifest.json
           
       - name: Release pr manifest
         env:
