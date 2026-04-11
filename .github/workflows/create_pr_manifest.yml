@@ -52,7 +52,6 @@ jobs:
           echo "submitter=$REPO_OWNER" >> $GITHUB_OUTPUT
           REPO_URL="https://github.com/${{ github.repository }}"
           echo "repository=$REPO_URL" >> $GITHUB_OUTPUT
-          
           DESCRIPTION=$(jq -r '.description // ""' manifest.json)
           echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
           
@@ -132,7 +131,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag_name }}
         run: |
-          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.sha256)"' > hashes.txt
+          gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[] | "\(.name) \(.sha256)"' > hashes.txt
           NAME="${{ steps.manifest.outputs.name }}"
           cat > mapping.json << EOF
           {
