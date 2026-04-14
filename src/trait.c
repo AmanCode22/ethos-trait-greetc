@@ -1,4 +1,6 @@
-#include <stdio.h>
-void greet(char * name) {
-    printf("Hello, %s\n",name);
+#include <iostream>
+#include <string>
+
+void greet(const std::string& name) {
+    std::cout << "Hello, " << name << std::endl;
 }
